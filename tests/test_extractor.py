@@ -13,7 +13,7 @@ from app.extractor import sniff_mime
     (b"RIFF\x00\x00\x00\x00WAVEfmt ", None),  # a RIFF file that is not WebP
     (b"\x89PNG", None),  # signature cut short
     (b"\xff\xd8", None),
-    (b"x" * 1030 + b"%PDF", None),  # %PDF only counts near the start
+    pytest.param(b"x" * 1030 + b"%PDF", None, id="pdf-marker-too-far-in"),  # %PDF only counts near the start
     (b"", None),
 ])
 def test_sniff_mime(data, expected):

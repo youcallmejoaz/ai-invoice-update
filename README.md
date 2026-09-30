@@ -13,6 +13,15 @@ It extracts: invoice number, invoice date, due date, supplier name and tax ID, c
 subtotal, tax, total and every line item. Anything not printed on the invoice is left blank (Gemini is told never to guess).
 If `subtotal + tax` does not equal `total`, the row gets a warning and the WhatsApp reply says so.
 
+## How it looks
+
+![Architecture](docs/portfolio/01-architecture.png)
+
+![Local simulation of the whole pipeline](docs/portfolio/demo-simulated.gif)
+
+*The GIF is a local simulation: the app code is real, but Meta's servers, Gemini and Google Sheets are replaced by
+stand-ins. More images, and what each one is, in [docs/portfolio](docs/portfolio/README.md).*
+
 ## Setup
 
 You need three free accounts. Keep secrets in `.env` (git-ignored); never commit them.
