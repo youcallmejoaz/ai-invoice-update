@@ -2,6 +2,7 @@
 import hashlib
 import hmac
 import logging
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -57,9 +58,13 @@ def download_media(media_id: str) -> bytes:
         if int(info.get("file_size") or 0) > MAX_MEDIA_BYTES:
             raise MediaTooLarge()
 
+        media_url = info["url"]
+        if urlsplit(media_url).scheme != "https":
+            raise ValueError("Graph API returned a non-https media URL; not sending the access token to it")
+
         chunks, total = [], 0
         headers = {**_auth_header(), "User-Agent": USER_AGENT}
-        with client.stream("GET", info["url"], headers=headers) as response:
+        with client.stream("GET", media_url, headers=headers) as response:
             _check(response)
             for chunk in response.iter_bytes():
                 total += len(chunk)

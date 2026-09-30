@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import hmac
 import json
@@ -127,6 +128,7 @@ def test_missing_or_malformed_signature_is_rejected(fakes):
     assert client.post("/whatsapp/webhook", content=body).status_code == 403
     assert post(body, signature="sha1=abc").status_code == 403
     assert post(body, signature=b"sha256=\xe9").status_code == 403  # non-ASCII bytes must not crash the check
+    assert client.post("/whatsapp/webhook", content=b"x" * (main.MAX_BODY_BYTES + 1)).status_code == 403
 
 
 def test_tampered_body_is_rejected(fakes):
@@ -264,3 +266,91 @@ def test_sender_without_phone_number_falls_back_to_scoped_id(fakes):
     message = {"id": "wamid.u", "type": "document", "from_user_id": "US.1349", "document": {"id": "M1"}}
     post(envelope([message]))
     assert fakes["sent"][0][1] == "US.1349"
+
+
+# --- POST: raw-body signature, body cap, ordering ---
+
+def test_signature_is_checked_over_the_raw_bytes_not_a_re_serialised_copy(fakes):
+    # Meta's bodies are compact and escape "/" as "\/" and non-ASCII as \uXXXX; json.dumps would not
+    # reproduce them byte for byte, so verifying a re-serialised copy would reject every real webhook.
+    raw = (
+        '{"object":"whatsapp_business_account","entry":[{"id":"W","changes":[{"field":"messages","value":'
+        '{"metadata":{"phone_number_id":"PNID1"},"messages":[{"from":"15551234567","id":"wamid.raw",'
+        '"type":"document","document":{"id":"M\\/1","filename":"caf\\u00e9.pdf"}}]}}]}]}'
+    ).encode()
+    assert json.dumps(json.loads(raw)).encode() != raw  # sanity: re-serialising really changes the bytes
+    assert post(raw).status_code == 200
+    assert fakes["downloaded"] == ["M/1"]
+
+
+def test_oversized_body_is_rejected_before_it_is_read(fakes):
+    headers = {"X-Hub-Signature-256": "sha256=" + "0" * 64}
+    response = client.post("/whatsapp/webhook", content=b"x" * (main.MAX_BODY_BYTES + 1), headers=headers)
+    assert response.status_code == 413
+
+
+def test_chunked_body_over_the_cap_is_rejected(fakes):
+    mib = 1024 * 1024
+    chunks = (b"x" * mib for _ in range(main.MAX_BODY_BYTES // mib + 2))  # no Content-Length is sent
+    headers = {"X-Hub-Signature-256": "sha256=" + "0" * 64}
+    assert client.post("/whatsapp/webhook", content=chunks, headers=headers).status_code == 413
+
+
+def test_response_is_sent_before_the_work_starts(fakes, monkeypatch):
+    # TestClient runs background tasks before it returns, so drive the ASGI app directly to see the order.
+    events = []
+    monkeypatch.setattr(main, "handle_message", lambda *args, **kwargs: events.append("work"))
+    body = json.dumps(envelope([document()])).encode()
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST",
+        "path": "/whatsapp/webhook", "raw_path": b"/whatsapp/webhook", "query_string": b"", "root_path": "",
+        "scheme": "http", "server": ("testserver", 80), "client": ("testclient", 5000),
+        "headers": [
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode()),
+            (b"x-hub-signature-256", sign(body).encode()),
+        ],
+    }
+
+    async def run():
+        delivered = False
+
+        async def receive():
+            nonlocal delivered
+            if not delivered:
+                delivered = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return {"type": "http.disconnect"}
+
+        async def send(message):
+            if message["type"] == "http.response.body" and not message.get("more_body"):
+                events.append("response-sent")
+
+        await main.app(scope, receive, send)
+
+    asyncio.run(run())
+    assert events == ["response-sent", "work"]
+
+
+# --- POST: message kinds and envelope shapes ---
+
+def test_reactions_and_system_messages_are_ignored_silently(fakes):
+    reaction = {"from": SENDER, "id": "wamid.r", "type": "reaction", "reaction": {"message_id": "wamid.1", "emoji": "👍"}}
+    system = {"from": SENDER, "id": "wamid.s", "type": "system", "system": {"body": "user changed number"}}
+    assert post(envelope([reaction, system])).status_code == 200
+    assert fakes["sent"] == [] and fakes["downloaded"] == []
+
+
+def test_two_changes_in_one_entry_are_both_processed(fakes):
+    payload = envelope([document("wamid.a", "MEDIA_A")])
+    payload["entry"][0]["changes"].extend(envelope([document("wamid.b", "MEDIA_B")])["entry"][0]["changes"])
+    post(payload)
+    assert sorted(fakes["downloaded"]) == ["MEDIA_A", "MEDIA_B"]
+
+
+def test_sender_falls_back_to_the_contacts_user_id(fakes):
+    message = {"id": "wamid.c", "type": "document", "document": {"id": "M1"}}  # no "from", no "from_user_id"
+    payload = envelope([message])
+    payload["entry"][0]["changes"][0]["value"]["contacts"] = [{"profile": {"name": "Ann"}, "user_id": "US.2222"}]
+    post(payload)
+    assert fakes["sent"][0][1] == "US.2222"

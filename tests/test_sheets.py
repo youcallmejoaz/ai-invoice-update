@@ -60,13 +60,13 @@ def test_creates_tabs_with_headers_and_appends_rows(spreadsheet):
         invoice_number="INV-1", supplier_name="Acme", currency="USD", subtotal=100, tax=10, total=110,
         line_items=[LineItem(description="Widget", quantity=2, unit_price=50, amount=100)],
     )
-    sheets.append_invoice(invoice, "whatsapp:+1555", datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc))
+    sheets.append_invoice(invoice, "15551234567", datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc))
 
     invoices = spreadsheet.tabs["Invoices"].rows
     assert invoices[0] == sheets.INVOICE_HEADERS
     row = dict(zip(sheets.INVOICE_HEADERS, invoices[1]))
     assert row["Received At"] == "2026-09-30T12:00:00+00:00"
-    assert row["From"] == "whatsapp:+1555"
+    assert row["From"] == "15551234567"
     assert row["Invoice Number"] == "INV-1"
     assert row["Total"] == 110
     assert row["# Line Items"] == 1

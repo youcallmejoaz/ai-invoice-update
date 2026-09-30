@@ -128,3 +128,23 @@ def test_signature_check():
     assert not whatsapp.is_valid_signature(body, good[:-1] + "0")
     assert not whatsapp.is_valid_signature(body, "")
     assert not whatsapp.is_valid_signature(b'{"a": 2}', good)
+
+
+def test_graph_api_version_setting_is_honoured(monkeypatch):
+    monkeypatch.setenv("GRAPH_API_VERSION", "v25.0")
+    get_settings.cache_clear()
+    sent = sent_request(monkeypatch, recipient="1555", body="hi")
+    assert sent["url"] == "https://graph.facebook.com/v25.0/PNID1/messages"
+
+
+def test_download_refuses_to_send_the_token_to_a_non_https_url(monkeypatch):
+    hosts = []
+
+    def handler(request):
+        hosts.append(request.url.host)
+        return httpx.Response(200, json={"url": "http://attacker.example/x", "file_size": "1"})
+
+    use_transport(monkeypatch, handler)
+    with pytest.raises(ValueError):
+        whatsapp.download_media("MEDIA1")
+    assert hosts == ["graph.facebook.com"]

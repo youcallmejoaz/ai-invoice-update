@@ -1,6 +1,7 @@
 import hmac
 import json
 import logging
+import re
 from collections import OrderedDict
 from datetime import datetime, timezone
 from threading import Lock
@@ -19,6 +20,10 @@ app = FastAPI(title="WhatsApp invoice reader")
 _seen: OrderedDict[str, None] = OrderedDict()
 _seen_lock = Lock()
 _SEEN_LIMIT = 5000
+
+MAX_BODY_BYTES = 5 * 1024 * 1024  # Meta's webhook payloads are at most ~3 MB
+_SIGNATURE_FORMAT = re.compile(r"sha256=[0-9a-f]{64}")
+IGNORED_MESSAGE_TYPES = {"reaction", "system"}  # e.g. a thumbs-up on our reply: nothing to answer
 
 
 def _first_delivery(message_id: str) -> bool:
@@ -41,6 +46,8 @@ def handle_message(message: dict, phone_number_id: str, sender: str) -> None:
             logger.exception("Could not send WhatsApp reply to %s", sender)
 
     message_type = message.get("type")
+    if message_type in IGNORED_MESSAGE_TYPES:
+        return
     media = message.get(message_type) if message_type in ("document", "image") else None
     if not isinstance(media, dict) or not media.get("id"):
         reply("👋 Send me an invoice as a PDF (or a photo) and I'll add it to the spreadsheet.")
@@ -96,6 +103,20 @@ def _messages_in(payload) -> list[tuple[dict, str, str]]:
     return found
 
 
+async def _read_capped_body(request: Request) -> bytes:
+    """Read the request body, refusing anything over MAX_BODY_BYTES (this runs before authentication)."""
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+        raise HTTPException(status_code=413, detail="Body too large")
+    chunks, total = [], 0
+    async for chunk in request.stream():  # also covers chunked uploads that have no Content-Length
+        total += len(chunk)
+        if total > MAX_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="Body too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
@@ -120,8 +141,11 @@ def verify_webhook(request: Request) -> Response:
 
 @app.post("/whatsapp/webhook")
 async def receive_webhook(request: Request, background_tasks: BackgroundTasks) -> Response:
-    raw_body = await request.body()  # the signature covers the exact bytes, so check before parsing
-    if not whatsapp.is_valid_signature(raw_body, request.headers.get("X-Hub-Signature-256", "")):
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    if not _SIGNATURE_FORMAT.fullmatch(signature):  # cheap check first: don't read a body nobody vouches for
+        raise HTTPException(status_code=403, detail="Missing or malformed signature")
+    raw_body = await _read_capped_body(request)  # the signature covers the exact bytes, so verify before parsing
+    if not whatsapp.is_valid_signature(raw_body, signature):
         raise HTTPException(status_code=403, detail="Invalid signature")
     try:
         payload = json.loads(raw_body)

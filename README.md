@@ -32,7 +32,8 @@ Meta renames dashboard menus fairly often, so follow the wording on screen if it
    3. Under *To*, open *Manage phone number list* and add **your own phone** (WhatsApp sends you a confirmation code).
       The test number can only message phones on this list (up to 5), and the phone you send invoices from must be on it.
    4. Click *Generate access token* and put it in `WHATSAPP_ACCESS_TOKEN`. This temporary token lasts about 24 hours;
-      when replies start failing with error 190, generate a new one.
+      when replies start failing with error 190, generate a new one, paste it into `.env`, and **restart the app**
+      (settings are read once at startup).
    5. Open *App settings > Basic*, click *Show* next to *App secret*, and put it in `META_APP_SECRET`.
    6. Invent any string for `WHATSAPP_VERIFY_TOKEN` (you will type the same string into Meta in a moment).
 
@@ -60,6 +61,7 @@ If no webhook calls ever arrive, also subscribe your app to the test WhatsApp Bu
 API Setup page); this may be needed on some accounts:
 
 ```bash
+export WHATSAPP_ACCESS_TOKEN=...   # same value as in .env
 curl -X POST "https://graph.facebook.com/v26.0/<WABA_ID>/subscribed_apps" -H "Authorization: Bearer $WHATSAPP_ACCESS_TOKEN"
 ```
 
