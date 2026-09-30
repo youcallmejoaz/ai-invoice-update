@@ -6,7 +6,7 @@ Prototype: send an invoice PDF to a WhatsApp number, Gemini reads it, and the da
 Phone (WhatsApp) --PDF--> Meta WhatsApp Cloud API --webhook (JSON)--> FastAPI (/whatsapp/webhook)
                                                                         1. check the X-Hub-Signature-256 signature, answer 200 at once
                                                                         2. background: download PDF from Meta -> Gemini -> Google Sheet
-                                                                        3. WhatsApp reply: "Saved invoice INV-... | Acme | USD 1996.5"
+                                                                        3. WhatsApp reply: "✅ Saved invoice INV-2026-0042 · Acme Web Studio Ltd · USD 1996.5"
 ```
 
 It extracts: invoice number, invoice date, due date, supplier name and tax ID, customer name, currency,
@@ -19,8 +19,9 @@ If `subtotal + tax` does not equal `total`, the row gets a warning and the Whats
 
 ![Local simulation of the whole pipeline](docs/portfolio/demo-simulated.gif)
 
-*The GIF is a local simulation: the app code is real, but Meta's servers, Gemini and Google Sheets are replaced by
-stand-ins. More images, and what each one is, in [docs/portfolio](docs/portfolio/README.md).*
+*The GIF is a local simulation, not a live run: Meta's servers, Gemini and Google Sheets are replaced by stand-ins (the
+Gemini call itself is replaced by fixed values). More images, and what each one is, in
+[docs/portfolio](docs/portfolio/README.md).*
 
 ## Setup
 
@@ -127,5 +128,7 @@ The Gemini model is set by `GEMINI_MODEL` (default `gemini-3.6-flash`), the Grap
 - Meta announced that replies inside the 24-hour window become billable per message after a monthly free allowance
   from 2026-10-01. I could not confirm whether that applies to test numbers.
 - Going beyond the test number needs a real business phone number and Meta business verification.
+- The Gemini call is only tested against a fake client (it checks how the app calls Gemini: file, prompt, schema, model),
+  never against the real service, so extraction quality on real invoices is unknown until you try it.
 - Written from Meta's documentation as summarised by secondary sources; Meta's own pages could not be opened while
   building this, and it has not yet been run against a live Meta account. Treat the first live run as the real test.

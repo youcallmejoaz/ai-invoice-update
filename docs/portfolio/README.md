@@ -7,14 +7,20 @@ session: those need the owner's own accounts and are listed in [Still to capture
 |---|---|---|
 | `01-architecture.png` | How the pieces fit together | Diagram |
 | `02-sample-invoice.png` | The test invoice (`samples/sample_invoice.pdf`) and the fields extracted from it | The real file, rendered |
-| `03-tests-passing.png` | `pytest -v`: all 68 offline tests | Real terminal output |
-| `04-webhook-security.png` | `curl` against the running app: setup handshake, valid and forged signatures, oversized body | Real requests to the real server |
+| `03-tests-passing.png` | `pytest -v`: all 71 offline tests | Real test run, re-typeset in two columns (the header lines and the warnings summary are trimmed) |
+| `04-webhook-security.png` | `curl` against the running app: setup handshake, valid and forged signatures, oversized body | Real requests to the real server. The commands shown are the exact commands that ran; secrets come from the environment. |
 | `05-sheet-rows.png` | The rows `app/sheets.py` writes to the `Invoices` and `LineItems` tabs | Real output of the real code against an in-memory stand-in. **Not a Google Sheets screenshot.** |
-| `demo-simulated.gif` | The whole pipeline, step by step, with the real data at each step | The real app code, with Meta's servers, Gemini and Google Sheets replaced by stand-ins. **Not a live run**, and labelled as such on every frame. |
+| `demo-simulated.gif` | The whole pipeline, step by step | The real code in `app/` handling a scripted message, with three stand-ins (below). **Not a live run**, and labelled as such on every frame. |
 
-The stand-ins in the GIF: Meta's Graph API is an in-process fake that serves the sample PDF and accepts replies,
-Gemini returns the sample invoice's known values, and Google Sheets is an in-memory fake. Everything else (signature check,
-request building, media download, file-type detection, sanity check, sheet rows, reply text) is the code in `app/`.
+**What is real and what is scripted in the GIF.** Real: the signature check, the request and response handling, the
+Graph API request building, the media download, file-type detection, the total check, the sheet rows and the reply text.
+Scripted or replaced: the incoming message (built locally in Meta's format); Meta's servers (an in-process fake that serves
+the sample PDF and accepts replies); Google Sheets (an in-memory fake); and **Gemini: `extractor.extract_invoice` itself is
+replaced by a function that returns the sample invoice's known values**, so the Gemini call code does not run in the GIF.
+Offline, that call is only covered by tests against a fake Gemini client (they check the file, prompt, schema and model
+that are sent, not what the real service returns).
+
+**The live path has not been run yet**: not against a live Meta account, a Gemini key, or a Google Sheet.
 
 ## Still to capture (live screenshots)
 
